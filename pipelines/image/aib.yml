@@ -1,0 +1,171 @@
+# description:  will create a vm with a domain (see variable file) and a jump host in
+# dependson: Networking pipeline needs to be run befor this!
+# owner: bfrank
+#########################
+
+name: 'AVD PoC Azure Image Builder Pipeline'
+
+parameters:
+  - name: groupSelection
+    displayName: Deployment environment variable file to use
+    type: string
+    default: ..\bfrankvs.pipeline.variables.yml
+    values:
+    - ..\bfrankcsp.pipeline.variables.yml
+    - ..\bfrankvs.pipeline.variables.yml
+
+variables:
+ - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
+
+trigger: none
+
+stages:
+  - stage: Publish
+    displayName: Publish
+    jobs:
+      - job: PublishJob
+        displayName: Copy and publish artefacts
+        steps:
+          - task: CopyFiles@2
+            displayName: Copy ARM templates
+            inputs:
+              sourceFolder: pipelines/image
+              contents: |
+                **/image/setupartefacts/**
+                **/setupartefacts/**
+                **\image\setupartefacts\**
+                **\setupartefacts\**
+                *.json
+              targetFolder: $(Build.ArtifactStagingDirectory)/${{ variables.artifactDropName }}
+          - task: PublishPipelineArtifact@1
+            displayName: Publish artefacts
+            inputs:
+              targetPath: "$(Build.ArtifactStagingDirectory)/${{ variables.artifactDropName }}"
+              artifact: ${{ variables.artifactDropName }}
+  
+  - stage: DeployARM
+    displayName: ARM Deployments
+    jobs:
+      - job:
+        displayName: Deploy Azure Image Builder
+      - deployment: Deploy
+        environment: $(azureResourceManagerConnection)
+        pool:
+          vmImage: windows-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+              - task: AzureResourceGroupDeployment@2
+                displayName: Deploy storage account for setup artefacts (PowerShell scripts) via ARM template
+                inputs:
+                    azureSubscription: $(azureResourceManagerConnection)
+                    action: "Create Or Update Resource Group"
+                    resourceGroupName: $(rgForSharedResources)
+                    location: $(location)
+                    templateLocation: "Linked artifact"
+                    csmFile: $(Pipeline.Workspace)/${{ variables.artifactDropName }}/artefactsstorageaccount.json
+                    overrideParameters: '-saPrefix "$(saPrefix)"'
+                    deploymentOutputs: "armOutputs"
+
+              - task: PowerShell@2
+                displayName: Prepare pipeline variables - SAS token to storage account
+                inputs:
+                    targetType: "inline"
+                    script: |
+                      # Write your PowerShell commands here.
+                      $var=ConvertFrom-Json '$(armOutputs)'
+                      $value=$var.saName.value
+
+                      Write-Host "storage account variable"
+                      Write-Host "##vso[task.setvariable variable=SANAME;]$value"
+
+                      $sasvalue=$var.serviceSas.value
+
+                      Write-Host "SAS token from ARM output stored in variable SAS"
+                      Write-Host "##vso[task.setvariable variable=SAS;]$sasvalue"
+
+              - task: AzureFileCopy@4
+                displayName: Copy setup artefacts to storage account
+                inputs:
+                    SourcePath: "$(Pipeline.Workspace)/${{ variables.artifactDropName }}/setupartefacts"
+                    azureSubscription: $(azureResourceManagerConnection)
+                    Destination: "AzureBlob"
+                    storage: $(SANAME)
+                    ContainerName: setupartefacts
+                    cleanTargetBeforeCopy: true
+
+              - task: AzurePowerShell@5
+                displayName: Create AIB managed identity if needed
+                inputs:
+                    azureSubscription: $(azureResourceManagerConnection)
+                    ScriptType: "InlineScript"
+                    errorActionPreference: "stop"
+                    azurePowerShellVersion: "LatestVersion"
+                    Inline: |
+                      $aibid = $null
+                      $aibid = (Get-AzResource -Name $(imagebuilderidentityname) -ResourceType 'Microsoft.ManagedIdentity/userAssignedIdentities').ResourceId
+                      if ($aibid -eq $null){
+                        "Identity needs to be created"
+                         $templateParameterObject = @{
+                          'UserAssignedIdentityName' =  [string]"$(imagebuilderidentityname)"
+                          'ResourceGroupName' = [string]"$(rgForSharedResources)"
+                        }
+                      $templateParameterObject
+                      $deploymentName = "aibidentitydeployment$([System.DateTime]::Now.ToString('ddMMyyHHmm'))"
+                      
+                      $deployment = New-AzSubscriptionDeployment -Name "$deploymentName" -Location "$(location)" -TemplateParameterObject $templateParameterObject -TemplateFile "$(Pipeline.Workspace)/${{ variables.artifactDropName }}/aibidentity.json" -verbose
+                      $aibid = $deployment.Outputs.managedID.Value
+                      }
+                      
+                      write-Host "Setting AIB Identity: $aibid"
+                      Write-Host "##vso[task.setvariable variable=AIBID;]$aibid"
+
+              - task: AzureResourceGroupDeployment@2
+                displayName: win10 multi template via ARM template
+                inputs:
+                    azureSubscription: $(azureResourceManagerConnection)
+                    action: "Create Or Update Resource Group"
+                    resourceGroupName: $(rgForSharedResources)
+                    location: $(location)
+                    templateLocation: "Linked artifact"
+                    csmFile: $(Pipeline.Workspace)/${{ variables.artifactDropName }}/Win10MultiTemplate.json
+                    csmParametersFile: $(Pipeline.Workspace)/${{ variables.artifactDropName }}/Win10MultiTemplate.parameters.json
+                    overrideParameters: '-svclocation "$(location)" -imagenameprefix $(imagenameprefix) -userID $(AIBID)'
+                    deploymentOutputs: "armOutputs"
+
+              - task: PowerShell@2
+                displayName: Prepare pipeline variables - ImageTemplateName
+                inputs:
+                    targetType: "inline"
+                    script: |
+                      # Write your PowerShell commands here.
+                      $var=ConvertFrom-Json '$(armOutputs)'
+                      $ImageTemplateName=$var.ImageTemplateName.value
+
+                      Write-Host "Created AIB image template: $ImageTemplateName"
+                      Write-Host "##vso[task.setvariable variable=IMAGETEMPLATENAME;]$ImageTemplateName"
+
+              - task: AzurePowerShell@5
+                displayName: "Install Az.ImageBuilder"
+                inputs:
+                  azureSubscription: $(azureResourceManagerConnection)
+                  ScriptType: 'InlineScript'
+                  Inline: 'Install-Module -name Az.ImageBuilder -AllowPrerelease -Force -Scope CurrentUser'
+                  azurePowerShellVersion: 'LatestVersion'
+
+              - task: AzurePowerShell@5
+                displayName: "Build Image"
+                inputs:
+                  azureSubscription: $(azureResourceManagerConnection)
+                  ScriptType: 'InlineScript'
+                  Inline: 'Start-AzImageBuilderTemplate -ResourceGroupName $(rgForSharedResources) -Name $(IMAGETEMPLATENAME)'
+                  azurePowerShellVersion: 'LatestVersion'
+
+              - task: AzurePowerShell@5
+                displayName: "Remove Template"
+                inputs:
+                  azureSubscription: $(azureResourceManagerConnection)
+                  ScriptType: 'InlineScript'
+                  Inline: 'Remove-AzImageBuilderTemplate -ImageTemplateName $(IMAGETEMPLATENAME) -ResourceGroupName $(rgForSharedResources)'
+                  azurePowerShellVersion: 'LatestVersion'

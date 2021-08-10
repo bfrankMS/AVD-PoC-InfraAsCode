@@ -1,0 +1,186 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "UserAssignedIdentityName": {
+      "type": "string",
+      "defaultValue": "id-aib-wvd",
+      "metadata": {
+        "description": "USER ASSIGNED IDENTITY NAME"
+      }
+    },
+    "ResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "description"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "defaultValue": [
+        "Microsoft.Compute/galleries/read",
+        "Microsoft.Compute/galleries/images/read",
+        "Microsoft.Compute/galleries/images/versions/read",
+        "Microsoft.Compute/galleries/images/versions/write",
+        "Microsoft.Compute/images/write",
+        "Microsoft.Compute/images/read",
+        "Microsoft.Compute/images/delete"
+      ],
+      "metadata": {
+        "description": "Array of actions for the roleDefinition"
+      }
+    },
+    "notActions": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Array of notActions for the roleDefinition"
+      }
+    },
+    "roleName": {
+      "type": "string",
+      "defaultValue": "Azure Image Builder Service Image Creation Role",
+      "metadata": {
+        "description": "Friendly name of the role definition"
+      }
+    },
+    "roleDescription": {
+      "type": "string",
+      "defaultValue": "Image Builder access to create resources for the image build, you should delete or split out as appropriate",
+      "metadata": {
+        "description": "Detailed description of the role definition"
+      }
+    }
+  },
+  "variables": {
+    "roleDefName": "[guid(subscription().id, string(parameters('actions')), string(parameters('notActions')))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleDefinitions",
+      "apiVersion": "2018-07-01",
+      "name": "[variables('roleDefName')]",
+      "properties": {
+        "roleName": "[parameters('roleName')]",
+        "description": "[parameters('roleDescription')]",
+        "type": "customRole",
+        "isCustom": true,
+        "permissions": [
+          {
+            "actions": "[parameters('actions')]",
+            "notActions": "[parameters('notActions')]"
+          }
+        ],
+        "assignableScopes": [
+          "[subscription().id]"
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "name": "aibidentityDeployment",
+      "apiVersion": "2020-06-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Authorization/roleDefinitions', variables('roleDefName'))]"
+      ],
+      "resourceGroup": "[parameters('ResourceGroupName')]",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "parameters": {
+          "i_rglocation": {
+            "value": "[deployment().location]"
+          },
+          "i_UserAssignedIdentityName": {
+            "value": "[parameters('UserAssignedIdentityName')]"
+          },
+          "i_roleDefName": {
+            "value": "[variables('roleDefName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "variables": {
+            "roleAssignmentID": "[guid(subscription().id)]",
+            "sleepseconds": "3"
+          },
+          "parameters": {
+            "i_UserAssignedIdentityName": { "type": "string" },
+            "i_rglocation": { "type": "string" },
+            "i_roleDefName": { "type": "string" }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "name": "[parameters('i_UserAssignedIdentityName')]",
+              "apiVersion": "2018-11-30",
+              "location": "[parameters('i_rglocation')]"
+            },
+            {
+              "type": "Microsoft.Resources/deploymentScripts",
+              "apiVersion": "2020-10-01",
+              "name": "sleep",
+              "location": "[parameters('i_rglocation')]",
+              "dependsOn": [
+                "[parameters('i_UserAssignedIdentityName')]"
+              ],
+              "kind": "AzurePowerShell",
+              "identity": {
+                "type": "userAssigned",
+                "userAssignedIdentities": {
+                  "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('i_UserAssignedIdentityName'))]": { /*ttk bug*/
+                  }
+                }
+              },
+              "properties": {
+                "forceUpdateTag": "1",
+                "azPowerShellVersion": "3.0",
+                "arguments": "[format(' -sleepseconds {0}', variables('sleepseconds'))]",
+                "scriptContent": "param([int] $sleepseconds) Start-Sleep -Seconds $sleepseconds;Write-Output \"Waited $sleepseconds\" seconds.",
+                "timeout": "PT5M",
+                "cleanupPreference": "OnSuccess",
+                "retentionInterval": "PT1H"
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "dependsOn": [
+                "[parameters('i_UserAssignedIdentityName')]",
+                "[resourceId('Microsoft.Resources/deploymentScripts', 'sleep')]"
+              ],
+              "apiVersion": "2020-04-01-preview",
+              "name": "[variables('roleAssignmentID')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions',parameters('i_roleDefName'))]",
+                "principalId": "[reference(parameters('i_UserAssignedIdentityName')).principalId]"
+              }
+            }
+          ],
+          "outputs": {
+            "principalId": {
+              "type": "string",
+              "value": "[reference(parameters('i_UserAssignedIdentityName')).principalId]"
+            },
+            "managedID": {
+                "type": "string",
+                "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('i_UserAssignedIdentityName'))]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "roledefinitionID": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions',variables('roleDefName'))]"
+    },
+    "managedID": {
+        "type": "string",
+        "value": "[reference('aibidentityDeployment').outputs.managedID.value]"
+    }
+  }
+}

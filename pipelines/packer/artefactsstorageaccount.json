@@ -1,0 +1,75 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "saPrefix": {
+            "type": "string",
+            "defaultValue": "sabf",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "baseTime": {
+            "type": "string",
+            "defaultValue": "[utcnow('yyyy-MM-dd T00:00:00')]"
+        },
+        "tags": {
+            "type": "object",
+            "metadata": {
+                "description": "tags for the resources"
+            },
+            "defaultValue": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    },
+    "functions": [],
+    "variables": {
+        "saName": "[toLower(substring(concat(parameters('saPrefix'),uniqueString(resourceGroup().id)),0,14))]",
+        "containerName": "setupartefacts",
+        "serviceSasFunctionValues": {
+            "canonicalizedResource": "[concat('/blob/', variables('saName'), '/', variables('containerName'))]",
+            "signedResource": "c",
+            "signedPermission": "r",
+            "signedExpiry": "[dateTimeAdd(parameters('baseTime'),'P2YT0H00M')]"
+        }
+    },
+    "resources": [
+        {
+            "name": "[ variables('saName') ]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "location": "[ resourceGroup().location ]",
+            "tags": "[parameters('tags')]",
+            "kind": "StorageV2",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "resources": [
+                {
+                    "type": "blobServices/containers",
+                    "apiVersion": "2019-06-01",
+                    "name": "[ concat('default/', variables('containerName')) ]",
+                    "dependsOn": [
+                        "[ variables('saName') ]"
+                    ]
+                }
+            ],
+            "properties": {
+                "accessTier": "Cool"
+            }
+        }
+    ],
+    "outputs": {
+        "saName": {
+            "type": "string",
+            "value": "[ variables('saName') ]"
+        },
+        "serviceSas": {
+            "type": "string",
+            "value": "[ listServiceSas(variables('saName'), '2018-02-01', variables('serviceSasFunctionValues')).serviceSasToken ]"
+        }
+    }
+}

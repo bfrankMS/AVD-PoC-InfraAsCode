@@ -1,0 +1,107 @@
+name: 'AVD HostPool Pipeline (creates: HP (+VMs), App Group + Workspace)'
+trigger: none
+
+parameters:
+  - name: groupSelection
+    displayName: Deployment environment variable file to use
+    type: string
+    values:
+    - ..\bfrankcsp.pipeline.variables.yml
+    - ..\bfrankvs.pipeline.variables.yml
+    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+  - name: administratorAccountUsername
+    displayName: domain join user name (without @domain.org)  # will also be local admin
+    default: avdadmin
+  - name: administratorAccountPassword
+    displayName: admin password
+
+variables:
+ - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    steps:
+    - task: AzureCLI@2  
+      displayName: 'list artifacts' 
+      inputs: 
+        azureSubscription: $(azureResourceManagerConnection) 
+        scriptType: 'pscore'  
+        scriptLocation: 'inlineScript'  
+        inlineScript: 'ls pipelines'    
+
+    - task: AzureCLI@2  
+      displayName: 'build bicep artifact' 
+      inputs: 
+        azureSubscription: $(azureResourceManagerConnection) 
+        scriptType: 'pscore'  
+        scriptLocation: 'inlineScript'  
+        inlineScript: 'az bicep build --file pipelines/hostpool/avdcomplete.bicep'  
+
+    - task: PublishBuildArtifacts@1 
+      displayName: 'Publish artifact in pipeline' 
+      inputs: 
+        PathtoPublish: '$(Build.SourcesDirectory)/pipelines/hostpool/avdcomplete.json'  
+        ArtifactName: 'finishedTemplate'  
+        publishLocation: 'Container' 
+
+- stage: deploy
+  jobs:
+  - deployment: biceptoAzure
+    displayName: 'Deploy bicep to Azure'
+    environment: $(azureResourceManagerConnection)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: execute bicep
+            inputs:
+              azureSubscription: $(azureResourceManagerConnection) 
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az group create --name $(resourceGroupHostPool) --location $(locationHostPool)
+                
+                $principalID = $(az ad group show --group 'avd users' --query objectId --out tsv)
+
+                $tagValues = @{
+                  "CreatedBy"    = "devops"
+                  "deploymentDate" = "$(([datetime]::Now).ToString('dd-MM-yyyy_HH_mm'))"
+                  "Environment"    = "PoC"
+                  "Service"        = "AVD"
+                } 
+                
+                #tags (json object) need to be escaped  result  e.g.       '{\"CreatedBy\":  \"bfrank\"}'
+                $escTagValues = $([string]$(ConvertTo-Json $tagValues).Replace('"','\"'))
+                $escTagValues
+                
+                $subnetID = $(az network vnet subnet list --resource-group $(rgForSharedResources) --vnet-name $(vnetName) --query "[?name=='$(subnetHostPool)'].id" --out tsv)
+                $subnetID
+                
+                az deployment group create  `
+                --name $("avd_"+([datetime]::Now).ToString('dd-MM-yy_HH_mm')) `
+                --template-file $(Build.SourcesDirectory)/pipelines/hostpool/avdcomplete.bicep `
+                --resource-group $(resourceGroupHostPool) `
+                --parameters resourcePrefix=$(resourceprefix) `
+                  location=$(locationHostPool) `
+                  administratorAccountPassword=${{ parameters.administratorAccountPassword }} `
+                  administratorAccountUsername=${{ parameters.administratorAccountUsername }} `
+                  domain=$(domainName) `
+                  ouPath=$(ouPath) `
+                  subnet_id=$subnetID `
+                  hostpoolName=$(hostpoolName) `
+                  hostPoolRG=$(resourceGroupHostPool) `
+                  principalID=$principalID `
+                  workspaceName='$(hostpoolName)-WS' `
+                  workspaceFriendlyName='Cloud Workspace hosting $(hostpoolName)' `
+                  tagValues=$escTagValues `
+                  currentDate=$(([datetime]::Now).ToString('dd-MM_HH_mm')) 
+
+                  
+          

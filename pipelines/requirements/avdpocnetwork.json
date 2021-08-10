@@ -1,0 +1,74 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "vnetName": {
+            "type": "string",
+            "defaultValue": "vnet-AVD-PoC",
+            "metadata": {
+                "description": "name of your avd vnet"
+            }
+        },
+        "vnetAddressPrefix": {
+            "type": "string",
+            "defaultValue": "10.1.0.0/16",
+            "metadata": {
+                "description": "address prefix of your avd vnet"
+            }
+        },
+        "subnets": {
+            "type": "array",
+            "metadata": {
+                "description": "description"
+            },
+            "defaultValue": [
+                {
+                    "name": "snet-DC",
+                    "addressPrefix": "10.1.0.0/24"
+                },
+                {
+                    "name": "GatewaySubnet",
+                    "addressPrefix": "10.1.254.0/24"
+                }
+            ]
+        },
+        "tags": {
+            "type": "object",
+            "metadata": {
+                "description": "tags for the resources"
+            },
+            "defaultValue": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2020-06-01",
+            "name": "[parameters('vnetName')]",
+            "location": "[resourceGroup().location]",
+            "tags" :"[parameters('tags')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('vnetAddressPrefix')]"
+                    ]
+                },
+                "copy": [
+                    {
+                        "name": "subnets",
+                        "count": "[length(parameters('subnets'))]",
+                        "input": {
+                            "name": "[parameters('subnets')[copyIndex('subnets')].name]",
+                            "properties": {
+                                "addressPrefix": "[parameters('subnets')[copyIndex('subnets')].addressPrefix]"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}

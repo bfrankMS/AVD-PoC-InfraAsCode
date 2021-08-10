@@ -1,0 +1,44 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "rgNames": {
+            "type": "array",
+            "defaultValue": [
+                "rg-avd-PoC-shared",
+                "rg-avd-PoC-HP1"
+            ]
+        },
+        "tags": {
+            "type": "object",
+            "metadata": {
+                "description": "tags for the resources"
+            },
+            "defaultValue": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Resources/resourceGroups",
+            "apiVersion": "2020-10-01",
+            "location": "[deployment().location]",
+            "tags": "[parameters('tags')]",
+            "name": "[parameters('rgNames')[copyIndex()]]",
+            "copy": {
+                "name": "rgCopy",
+                "count": "[length(parameters('rgNames'))]"
+            },
+            "properties": {}
+        }
+    ],
+    "outputs": {
+        "rgNames": {
+            "type": "array",
+            "value": "[parameters('rgNames')]"
+        }
+    }
+}

@@ -1,0 +1,66 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "administratorAccountUsername": {
+            "value": "avdadmin"
+        },
+        "administratorAccountPassword": {
+            "value": ""
+        },
+        "domain": {
+            "value": "contoso.local"
+        },
+        "ouPath": {
+            "value": "OU=HostPool1,OU=AVD,DC=contoso,DC=local"
+        },
+        "subnet": {
+            "value": "snet-HP1"
+        },
+        "vnet": {
+            "value": "vnet-avdPoC-NE"
+        },
+        "vnetrg": {
+            "value": "rg-avdPoC-shared"
+        },
+        "hostpoolName": {
+            "value": "HP1"
+        },
+        "vmNameSuffixes": {
+            "value": [
+                0,
+                1
+            ]
+        },
+        "enableAcceleratedNetworking": {
+            "value": false
+        },
+        "vmDiskType": {
+            "value": "StandardSSD_LRS"
+        },
+        "vmSize": {
+            "value": "Standard_DS2_v2"
+        },
+        "custimage": {
+            "value": false
+        },
+        "imageref": {
+            "value": ""
+        },
+        "vmGalleryImageOffer": {
+            "value": "office-365"
+        },
+        "vmGalleryImagePublisher": {
+            "value": "MicrosoftWindowsDesktop"
+        },
+        "vmGalleryImageSKU": {
+            "value": "20h2-evd-o365pp"
+        },
+        "tagValues": {
+            "value": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    }
+}

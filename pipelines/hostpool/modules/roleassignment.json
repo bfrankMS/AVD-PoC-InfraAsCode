@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1.14562",
+      "templateHash": "1076937995345311952"
+    }
+  },
+  "parameters": {
+    "principalID": {
+      "type": "string"
+    },
+    "appGroupName": {
+      "type": "string"
+    },
+    "wvdusersrole": {
+      "type": "string",
+      "defaultValue": "[newGuid()]"
+    }
+  },
+  "functions": [],
+  "variables": {
+    "roledefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '1d18fff3-a72a-46b5-b4a9-0b38a3cd7e63')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2020-04-01-preview",
+      "scope": "[format('Microsoft.DesktopVirtualization/applicationGroups/{0}', parameters('appGroupName'))]",
+      "name": "[parameters('wvdusersrole')]",
+      "properties": {
+        "roleDefinitionId": "[variables('roledefinitionId')]",
+        "principalId": "[parameters('principalID')]"
+      }
+    }
+  ]
+}

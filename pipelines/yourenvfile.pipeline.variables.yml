@@ -1,0 +1,60 @@
+variables:
+
+# Target subscription and service principal
+# -------------
+  azureResourceManagerConnection: 'yourazuredevopsserviceconnection'
+  artifactDropName: 'drop'
+  keyvaultname: kv-avdPoc....  # enter the full name of your key vault -> holds the Sprincipal password - fill with exact name with output you received when running the CreateDevopsSP.ps1 - or lookup the keyvault name in your azure subscription
+
+# Storage account for deployment artefacts (e.g. PowerShell scripts)
+  saPrefix: saavdart
+
+# RGs deployment location and network
+  pipelineName: 'AVD PoC ClassicDCandJumpHost pipeline'
+  location: 'northeurope'    #westeurope, germanywestcentral, ...
+  rgNames: rg-avdPoC-shared, rg-avdPoC-HP1, rg-avdPoC-HP2, rg-avdPoC-HP3 # rg-<app or service name>-<subscription type>-<###>
+  rgForSharedResources: rg-avdPoC-shared                  # don't touch + must be one of the above list -  e.g. domain controller will go there
+  vnetName: vnet-avdPoC-NE                                # vnet-<subscription type>-<region>-<###>
+  vnetAddressPrefix: 10.1.0.0/16
+  subnetsAddressPrefix: 10.1.0.0/24, 10.1.253.0/24, 10.1.254.0/24, 10.1.1.0/24, 10.1.2.0/24 # Important: subnets must fit into vnetAddressPrefix above - range goes with subnetNames as ordered above
+  subnetsName: snet-DC, snet-Jumphost, GatewaySubnet, snet-HP1, snet-HP2 # snet-<subscription>-<region>-<###>
+
+# Domain specific settings
+  domainName: contoso.local   # adjust to your domain.
+  dcName: avdPoC-AD-VM1       # no more than 15 chars
+  #admin user name & admin password are azure devops parameters -> you will be asked when executing the pipeline - remember the password ! (see classicdcandjumphost.yml)
+  dcSize:  Standard_DS2_v2    # can be changed - however must be an existing size.
+  diskSku: StandardSSD_LRS    # Standard_LRS, Premium_LRS, StandardSSD_LRS, UltraSSD_LRS
+  dcSubnet: snet-DC           # must be subnetsName from above
+  dcIP: 10.1.0.4              # must be free and located in subnet above
+
+# Jumphost section
+  vmName: avdPoC-JumpHost     # no more than 15 chars
+  #admin User & password - same as in dc see above!
+  vmSize:  Standard_DS2_v2
+  vmSubnet: snet-Jumphost     # must be subnetsName from above
+
+# FSLogix settings
+  locationFSLogix: 'northeurope'    #westeurope, northeurope, germanywestcentral #location of the azure premium file share - please place as close to the users (desktops) as possible
+  rgFSLogixResources: rg-avdPoC-shared
+  saFSLogixPrefix: saavdprof
+  shareName: avdprofiles
+  # the azure premium file share will be domain joined. So these are the required information we need to perform this:
+  # dcName: see above
+  rgContainingDomainController: rg-avdPoC-shared
+
+# avd Host Pool Settings
+  locationHostPool: 'northeurope'         # must find the domain controller 
+  resourceGroupHostPool: 'rg-avdPoC-HP1'  # must be one of aboves RG
+  resourcePrefix: avdPoC
+  ouPath: OU=HostPool1,OU=AVD,DC=contoso,DC=local
+  subnetHostPool: snet-HP1
+  hostPoolName: HP1
+  workspacesName: WS1
+
+# Packer
+  rgpacker: rg-packer
+  
+# Azure Image Builder 
+  imagenameprefix: win10-AIB
+  imagebuilderidentityname: mid-avdPoc-AIB

@@ -1,0 +1,59 @@
+# description:  will create a storage account with premium file share to hold the fslogix profile disks
+# dependson: - requirements - classic domain needs to be available.
+#            + AAD sync must be in place.
+# owner: bfrank
+#########################
+
+name: 'AVD PoC cleanup pipeline'
+
+parameters:
+  - name: groupSelection
+    displayName: Deployment environment variable file to use
+    type: string
+    default: ..\bfrankvs.pipeline.variables.yml
+    values:
+    - ..\bfrankcsp.pipeline.variables.yml
+    - ..\bfrankvs.pipeline.variables.yml
+
+variables:
+ - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
+
+trigger: none
+
+stages:
+  - stage: Cleanup
+    displayName: Cleanup AVD PoC Deployment
+    jobs:
+    - deployment: cleanup
+      environment: $(azureResourceManagerConnection)
+      strategy: 
+       runOnce:
+        deploy:
+          steps:
+          - task: AzurePowerShell@5
+            displayName: Removing resource groups
+            inputs:
+             azureSubscription: $(azureResourceManagerConnection)
+             ScriptType: "InlineScript"
+             errorActionPreference: "stop"
+             azurePowerShellVersion: "LatestVersion"
+             Inline: |
+              $rgNames =  [array]"$(rgNames)" -split ',' | % {$_.Trim()}
+              $myjobs = @()
+              foreach ($rgName in $rgNames)
+              {
+                  write-output "removing resourcegroup: $rgName"
+                  $myjobs += Start-Job -Name "removing$rgName" -ScriptBlock {
+                      param([string] $rgName
+                      )
+                      Remove-AzResourceGroup -Name $rgName -Force
+                  } -ArgumentList $rgName
+              }
+              Write-Output "waiting for jobs: $myjobs"
+              do {
+                  $running = @($myjobs | Where-Object { $_.State -eq 'Running' })
+                  $myjobs | Group-Object State | Select-Object count, name, @{N = 'RGs'; E = { $_.Group.GetEnumerator().name -join ',' } }
+                  write-output "-----------------"
+                  sleep 5
+              }
+              while ($running.count -gt 0)

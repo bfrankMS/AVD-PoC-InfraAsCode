@@ -1,0 +1,1 @@
+"I was run at: {0}" -f [System.DateTime]::Now.ToString('dd.MM.yyyy HH:mm:ss.fff') | Out-File -FilePath 'c:\\temp\\IWasRunAt.log' -Append

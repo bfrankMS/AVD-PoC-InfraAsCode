@@ -1,0 +1,141 @@
+name: 'AVD PoC Packer pipeline'
+
+schedules:
+- cron: "0 2 * * Tue,Thu,Sat"
+  displayName: Bi-daily build
+  branches:
+    include:
+    - master
+
+parameters:
+  - name: groupSelection
+    displayName: Deployment environment variable file to use
+    type: string
+    default: ..\bfrankvs.pipeline.variables.yml
+    values:
+    - ..\bfrankcsp.pipeline.variables.yml
+    - ..\bfrankvs.pipeline.variables.yml
+    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+
+variables:
+ - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
+
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Publish
+    displayName: Publish
+    jobs:
+      - job: PublishJob
+        displayName: Copy and publish artefacts
+        steps:
+          - task: CopyFiles@2
+            displayName: Copy ARM templates
+            inputs:
+              sourceFolder: pipelines/packer
+              contents: |
+                **/packer/setupartefacts/**
+                **/setupartefacts/**
+                **\packer\setupartefacts\**
+                **\setupartefacts\**
+                *.json
+                *.hcl
+              targetFolder: $(Build.ArtifactStagingDirectory)/${{ variables.artifactDropName }}
+          - task: PublishPipelineArtifact@1
+            displayName: Publish artefacts
+            inputs:
+              targetPath: "$(Build.ArtifactStagingDirectory)/${{ variables.artifactDropName }}"
+              artifact: ${{ variables.artifactDropName }}
+  
+  - stage: DeployARM
+    displayName: ARM Deployments
+    jobs:
+      - job:
+        displayName: Deploy Packer
+      - deployment: Deploy
+        environment: $(azureResourceManagerConnection)
+        strategy:
+          runOnce:
+            deploy:
+              steps:  
+              - task: AzurePowerShell@5
+                displayName: Deploy packer resource group
+                inputs:
+                    azureSubscription: $(azureResourceManagerConnection)
+                    ScriptType: "InlineScript"
+                    errorActionPreference: "stop"
+                    azurePowerShellVersion: "LatestVersion"
+                    Inline: |
+                      $templateParameterObject = @{
+                      'rgNames' =  @("$(rgpacker)")
+                      }
+                      $templateParameterObject
+                      $deploymentName = "rgdeployment$([System.DateTime]::Now.ToString('ddMMyyHHmm'))"
+                      New-AzSubscriptionDeployment -Name "$deploymentName" -Location "$(location)" -TemplateParameterObject $templateParameterObject -TemplateFile "$(Pipeline.Workspace)/${{ variables.artifactDropName }}/createresourcegroups.json" -verbose
+
+              - task: AzureResourceGroupDeployment@2
+                displayName: Deploy storage account for setup artefacts (PowerShell scripts) via ARM template
+                inputs:
+                    azureSubscription: $(azureResourceManagerConnection)
+                    action: "Create Or Update Resource Group"
+                    resourceGroupName: $(rgForSharedResources)
+                    location: $(location)
+                    templateLocation: "Linked artifact"
+                    csmFile: $(Pipeline.Workspace)/${{ variables.artifactDropName }}/artefactsstorageaccount.json
+                    overrideParameters: '-saPrefix "$(saPrefix)"'
+                    deploymentOutputs: "armOutputs"
+
+              - task: PowerShell@2
+                displayName: Prepare pipeline variables - SAS token to storage account
+                inputs:
+                    targetType: "inline"
+                    script: |
+                      # Write your PowerShell commands here.
+                      $var=ConvertFrom-Json '$(armOutputs)'
+                      $value=$var.saName.value
+
+                      Write-Host "storage account variable"
+                      Write-Host "##vso[task.setvariable variable=SANAME;]$value"
+
+                      $sasvalue=$var.serviceSas.value
+
+                      Write-Host "SAS token from ARM output stored in variable SAS"
+                      Write-Host "##vso[task.setvariable variable=SAS;]$sasvalue"
+
+              - task: AzureCLI@2
+                displayName: Run Packer
+                inputs:
+                  azureSubscription: $(azureResourceManagerConnection)
+                  scriptType: 'pscore'
+                  scriptLocation: 'inlineScript'
+                  inlineScript: |
+                    "upload packer provisioner artefacts"
+                    "=================="
+                    az storage blob upload-batch --account-name $(SANAME) -d setupartefacts/setupartefacts -s "$(Pipeline.Workspace)/${{ variables.artifactDropName }}/setupartefacts" --auth-mode login
+                    
+                    "get keyvault secrets"
+                    "=================="
+                    $appid =  az keyvault secret show --vault-name $(keyvaultname) --name spappid --query value -o tsv
+                    $tenantid =  az keyvault secret show --vault-name $(keyvaultname) --name tenantid --query value -o tsv
+                    $subscription =  az keyvault secret show --vault-name $(keyvaultname) --name subscriptionid --query value -o tsv
+                    $password =  az keyvault secret show --vault-name $(keyvaultname) --name sppassword --query value -o tsv
+
+                    "packer download"
+                    "=================="
+                    curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+                    sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+                    sudo apt-get update && sudo apt-get install packer
+                    packer version
+                    packer init $(Pipeline.Workspace)/${{ variables.artifactDropName }}/packertmplate.pkr.hcl
+                    "packer build"
+                    "=================="
+                    $managed_image_name = "img-Win10-" + $([System.DateTime]::Now.ToString('dd_MM_yyyy_HHmm'))
+                    $managed_image_name
+                    $softwarezip_uri = "https://$(SANAME).blob.core.windows.net/setupartefacts/setupartefacts/software.zip?$(SAS)"
+                    $softwarezip_uri
+                    $installps1_uri = "https://$(SANAME).blob.core.windows.net/setupartefacts/setupartefacts/packerinstall.ps1?$(SAS)"
+                    $installps1_uri
+                    packer build -force -debug -var "managed_image_name=$managed_image_name" -var "softwarezip_uri=$softwarezip_uri" -var "installps1_uri=$installps1_uri"  -var "client_id=$appid" -var "client_secret=$password" -var "rg_location=$(location)" -var "rg_name=$(rgpacker)" -var "subscription_id=$subscription" -var "tenant_id=$tenantid"  $(Pipeline.Workspace)/${{ variables.artifactDropName }}/packertmplate.pkr.hcl

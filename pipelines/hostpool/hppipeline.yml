@@ -1,0 +1,156 @@
+name: 'AVD HostPool Pipeline (creates: HP (+VMs), App Group + Workspace)'
+trigger: none
+
+parameters:
+  - name: groupSelection
+    displayName: Deployment environment variable file to use
+    type: string
+    values:
+    - ..\bfrankcsp.pipeline.variables.yml
+    - ..\bfrankvs.pipeline.variables.yml
+    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+  - name: administratorAccountUsername
+    displayName: domain join user name (without @domain.org)  # will also be local admin
+    default: avdadmin
+  - name: administratorAccountPassword
+    displayName: admin password
+  - name: hostPoolName
+    default: HP1
+    displayName: Name of the hostpool
+  - name: vmPrefix
+    default: AVD-HOST
+    displayName: Enter the names (Prefix) of the vms to create in this hostpool (will result in AVD-HOST-xxx)  
+  - name: vmNameSuffixes
+    default: 1,2
+    displayName: Enter the names (suffix) of the vms to create in this hostpool (1,2 -> AVD-HOST-1 + AVD-HOST-2)
+  - name: subnetHostPool
+    default: snet-HP1
+    displayName: The subnet the VMs will be placed in
+  - name: resourceGroupHostPool
+    default: 'rg-avdPoC-HP1'
+    displayName: Resource group of the hostpool
+  - name: ouPath
+    default: OU=HostPool1,OU=AVD,DC=contoso,DC=local
+    displayName: The AD OU path where the VMs to be placed under
+  - name: hpparameterfile
+    default: arm/hp.parameters.json
+    displayName: The ARM parameter file to be used for vm creation (contains e.g. size and storage of vm)
+    values:
+    - arm/hp.parameters.json
+
+
+    
+variables:
+ - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    steps:
+    - task: AzureCLI@2  
+      displayName: 'list artifacts' 
+      inputs: 
+        azureSubscription: $(azureResourceManagerConnection) 
+        scriptType: 'pscore'  
+        scriptLocation: 'inlineScript'  
+        inlineScript: 'ls pipelines'    
+
+    - task: AzureCLI@2  
+      displayName: 'build bicep artifact' 
+      inputs: 
+        azureSubscription: $(azureResourceManagerConnection) 
+        scriptType: 'pscore'  
+        scriptLocation: 'inlineScript'  
+        inlineScript: 'az bicep build --file pipelines/hostpool/hp.bicep'  
+
+    - task: PublishBuildArtifacts@1 
+      displayName: 'Publish artifact in pipeline' 
+      inputs: 
+        PathtoPublish: '$(Build.SourcesDirectory)/pipelines/hostpool/hp.json'  
+        ArtifactName: 'finishedTemplate'  
+        publishLocation: 'Container' 
+    
+    - task: PublishBuildArtifacts@1 
+      displayName: 'Publish arm parameters in pipeline' 
+      inputs: 
+        PathtoPublish: '$(Build.SourcesDirectory)/pipelines/hostpool/arm'  
+        ArtifactName: 'finishedTemplate/arm'  
+        publishLocation: 'Container' 
+
+- stage: deploy
+  jobs:
+  - deployment: biceptoAzure
+    displayName: 'Deploy bicep to Azure'
+    environment: $(azureResourceManagerConnection)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: execute bicep
+            inputs:
+              azureSubscription: $(azureResourceManagerConnection) 
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az group create --name ${{ parameters.resourceGroupHostPool }} --location $(location) 
+                
+                $principalID = $(az ad group show --group 'avd users' --query objectId --out tsv)
+
+                $tagValues = @{
+                  "CreatedBy"    = "devops"
+                  "deploymentDate" = "$(([datetime]::Now).ToString('dd-MM-yyyy_HH_mm'))"
+                  "Environment"    = "PoC"
+                  "Service"        = "AVD"
+                } 
+                
+                #tags (json object) need to be escaped  result  e.g.       '{\"CreatedBy\":  \"bfrank\"}'
+                $escTagValues = $([string]$(ConvertTo-Json $tagValues).Replace('"','\"'))
+                $escTagValues
+                
+                #$subnetID = $(az network vnet subnet list --resource-group $(rgForSharedResources) --vnet-name $(vnetName) --query "[?name=='${{ parameters.subnetHostPool }}'].id" --out tsv)
+                #$subnetID
+
+                #$vmNameSuffixesNormalized =   [string](('${{ parameters.vmNameSuffixes }}' -split ',') | ConvertTo-Json).Replace('"','\"')
+                $orignalString = '${{ parameters.vmNameSuffixes }}'
+                $splitString = [regex]::split($orignalString.TrimEnd(), '[,\s]+')
+                if ($splitString.Count -gt 1)
+                {
+                    $vmNameSuffixesNormalized = ($splitString | ConvertTo-Json).Replace('"','\"')
+                }
+                else
+                {
+                  $vmNameSuffixesNormalized = @"
+                [
+                    \`"$splitString\`"
+                ]
+                "@
+                }
+                "creating VMs:"
+                $vmNameSuffixesNormalized 
+                # will result in an json array with a backslash of [\"4\",\"5\"]
+
+                az deployment group create  `
+                --name $("hp_"+([datetime]::Now).ToString('dd-MM-yy_HH_mm')) `
+                --template-file $(Build.SourcesDirectory)/pipelines/hostpool/hp.bicep `
+                --resource-group ${{ parameters.resourceGroupHostPool }} `
+                --parameters '@$(Build.SourcesDirectory)/pipelines/hostpool/${{ parameters.hpparameterfile }}' `
+                --parameters administratorAccountPassword=${{ parameters.administratorAccountPassword }} `
+                  administratorAccountUsername=${{ parameters.administratorAccountUsername }} `
+                  domain=$(domainName) `
+                  ouPath=${{ parameters.ouPath }} `
+                  subnet=${{ parameters.subnetHostPool }} `
+                  vnet=$(vnetName) `
+                  vnetrg=$(rgForSharedResources) `
+                  hostpoolName=${{ parameters.hostPoolName }} `
+                  currentDate=$(([datetime]::Now).ToString('dd-MM_HH_mm')) `
+                  tagValues=$escTagValues `
+                  vmNameSuffixes=$vmNameSuffixesNormalized `
+                  vmPrefix=${{ parameters.vmPrefix }}
+
+          

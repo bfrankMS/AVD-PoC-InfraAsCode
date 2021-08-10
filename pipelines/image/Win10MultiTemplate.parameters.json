@@ -1,0 +1,18 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "imagenameprefix": {
+            "value": "<imagenameprefix>" 
+        },
+        "api-version": {
+            "value": "2020-02-14" 
+        },
+        "svclocation": {
+            "value": "<Location>"
+        },
+        "userID": {
+            "value": "/subscriptions/a2ba2440-..../resourcegroups/rg-.../providers/Microsoft.ManagedIdentity/userAssignedIdentities/myIdentity..."
+          }
+    }
+}

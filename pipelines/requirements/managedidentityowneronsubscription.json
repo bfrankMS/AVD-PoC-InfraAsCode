@@ -1,0 +1,64 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "vmName": {
+            "type": "string",
+            "metadata": {
+                "description": "VM that has a system managed identity to"
+            }
+        },
+        "resourceGroup": {
+            "type": "string",
+            "metadata": {
+                "description": "Resource group of vm"
+            }
+        },
+        "builtInRoleType": {
+            "type": "string",
+            "metadata": {
+                "description": "Built In Role Type for the Virtual Machine"
+            },
+            "defaultValue": "Owner",
+            "allowedValues": [
+                "Owner",
+                "Contributor",
+                "Reader",
+                "Virtual Machine Contributor"
+            ]
+        },
+        "tags": {
+            "type": "object",
+            "metadata": {
+                "description": "tags for the resources"
+            },
+            "defaultValue": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    },
+    "variables": {
+        "id": "[concat('/subscriptions/',subscription().subscriptionId ,'/resourceGroups/', parameters('resourceGroup') ,'/providers/Microsoft.Compute/virtualMachines/',parameters('vmName'))]",
+        "role": {
+            "Owner": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8e3af657-a8ff-443c-a75c-2fe8c4bcb635')]",
+            "Contributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+            "Reader": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+            "Virtual Machine Contributor": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'd73bb868-a0df-4d4d-bd69-98a00b01fccb')]"
+        },
+        "assignmentName": "[guid(resourceId('Microsoft.Compute/virtualMachines', parameters('vmName')), variables('role')[parameters('builtInRoleType')])]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2018-09-01-preview",
+            "tags" :"[parameters('tags')]",
+            "name": "[variables('assignmentName')]",
+            "properties": {
+                "principalId": "[reference(variables('id'), '2019-12-01', 'Full').identity.principalId]",
+                "roleDefinitionId": "[variables('role')[parameters('builtInRoleType')]]",
+                "scope": "[subscription().id]"
+            }
+        }
+    ]
+}

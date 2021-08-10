@@ -1,0 +1,85 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "saPrefix": {
+            "type": "string",
+            "defaultValue": "saavdprofiles",
+            "metadata": {
+                "description": "description"
+            }
+        },
+        "shareName": {
+            "type": "string",
+            "metadata": {
+                "description": "description"
+            },
+            "defaultValue": "avdprofiles"
+        },
+        "location": {
+            "type": "string",
+            "metadata": {
+                "description": "description"
+            },
+            "defaultValue": "[resourceGroup().location]"
+        },
+        "tags": {
+            "type": "object",
+            "metadata": {
+                "description": "tags for the resources"
+            },
+            "defaultValue": {
+                "Environment": "PoC",
+                "Service": "AVD"
+            }
+        }
+    },
+    "functions": [],
+    "variables": {
+        "saName": "[toLower(substring(concat(parameters('saPrefix'),uniqueString(resourceGroup().id)),0,15))]",
+        "apiVersion": "[providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]]"
+    },
+    "resources": [
+        {
+            "name": "[ variables('saName') ]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "tags" :"[parameters('tags')]",
+            "location": "[ parameters('location') ]",
+            "kind": "FileStorage",
+            "sku": {
+                "name": "Premium_LRS",
+                "tier": "Premium"
+            },
+            "resources": [
+                {
+                    "type": "fileServices/shares",
+                    "apiVersion": "2021-01-01",
+                    "name": "[ concat('default/', parameters('shareName')) ]",
+                    "dependsOn": [
+                        "[ variables('saName') ]"
+                    ],
+                    "properties": {
+                        "accessTier": "Premium",
+                        "shareQuota": 100,
+                        "enabledProtocols": "SMB"
+                    }
+                }
+            ]
+        }
+    ],
+    "outputs": {
+        "saName": {
+            "type": "string",
+            "value": "[ variables('saName') ]"
+        },
+        "shareName": {
+            "type": "string",
+            "value": "[parameters('shareName')]"
+        },
+        "sakey": {
+            "type": "string",
+            "value": "[ listKeys(variables('saName'), variables('apiVersion')).keys[0].value]"
+        }
+    }
+}
