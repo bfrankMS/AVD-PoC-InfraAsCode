@@ -10,9 +10,8 @@ parameters:
     displayName: Deployment environment variable file to use
     type: string
     values:
-    - ..\bfrankcsp.pipeline.variables.yml
-    - ..\bfrankvs.pipeline.variables.yml
-    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+    - ..\yourenvfile.pipeline.variables.yml
+    #- ..\otherenvironment.pipeline.variables.yml            # modify, rename and uncomment if 2nd... environment file
   - name: OUSuffix
     displayName: The upper OU path snippet to apply the GPO to
     default: OU=HostPool1,OU=AVD

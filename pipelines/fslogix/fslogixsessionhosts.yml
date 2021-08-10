@@ -9,10 +9,10 @@ parameters:
   - name: groupSelection
     displayName: Deployment environment variable file to use
     type: string
-    default: ..\bfrankvs.pipeline.variables.yml
+    default: ..\yourenvfile.pipeline.variables.yml
     values:
-    - ..\bfrankcsp.pipeline.variables.yml
-    - ..\bfrankvs.pipeline.variables.yml
+    - ..\yourenvfile.pipeline.variables.yml
+    #- ..\otherenvironment.pipeline.variables.yml            # modify, rename and uncomment if 2nd... environment file
 #The Azure file share to connect to 
   - name: VMNames
     type: object

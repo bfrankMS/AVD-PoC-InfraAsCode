@@ -10,9 +10,8 @@ parameters:
     displayName: add and select your environment variable file (classicdcandjumphost.yml)
     type: string
     values:
-    - ..\bfrankcsp.pipeline.variables.yml
-    - ..\bfrankvs.pipeline.variables.yml
-    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+    - ..\yourenvfile.pipeline.variables.yml
+    #- ..\otherenvironment.pipeline.variables.yml            # modify, rename and uncomment if 2nd... environment file
   - name: adminAccount
     default: avdadmin
   - name: adminPassword

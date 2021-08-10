@@ -10,9 +10,9 @@ parameters:
     displayName: Deployment environment variable file to use
     type: string
     values:
-    - ..\bfrankcsp.pipeline.variables.yml
-    - ..\bfrankvs.pipeline.variables.yml
-    # - ..\yourenvfile.pipeline.variables.yml         # modify, rename and uncomment your environment file
+    - ..\yourenvfile.pipeline.variables.yml
+    #- ..\otherenvironment.pipeline.variables.yml            # modify, rename and uncomment if 2nd... environment file
+
 
 variables:
  - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
