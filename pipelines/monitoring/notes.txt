@@ -1,0 +1,15 @@
+von hand....
+
+#download MMA Agent
+https://go.microsoft.com/fwlink/?LinkId=828603
+
+install MMA Agent:
+MMASetup-AMD64.exe /C /T:"c:\temp\MMA"
+
+
+#custom Data Collectors for Azure Log Analytics in C#
+https://github.com/Zimmergren/LogAnalytics.Client
+https://zimmergren.net/building-custom-data-collectors-for-azure-log-analytics/
+
+
+https://dev.loganalytics.io/

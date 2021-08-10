@@ -1,0 +1,58 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workspaceId": {
+            "type": "String",
+            "metadata": {
+                "description": "Workspace name"
+            }
+        },
+        "workspaceKey": {
+            "type": "String",
+            "metadata": {
+                "description": "Workspace Key"
+            }
+        },
+        "virtualMachines": {
+            "type": "Array"
+        },
+        "extensionNames": {
+            "type": "Array"
+        },
+        "vmLocations": {
+            "type": "Array"
+        },
+        "location": {
+            "defaultValue": "[resourceGroup().location]",
+            "type": "String",
+            "metadata": {
+                "description": "Location for all resources."
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2018-10-01",
+            "name": "[concat(parameters('virtualMachines')[copyIndex()],'/',parameters('extensionNames')[copyIndex()])]",
+            "location": "[parameters('vmLocations')[copyIndex()]]",
+            "properties": {
+                "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+                "type": "MicrosoftMonitoringAgent",
+                "typeHandlerVersion": "1.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "workspaceId": "[parameters('workspaceId')]"
+                },
+                "protectedSettings": {
+                    "workspaceKey": "[parameters('workspaceKey')]"
+                }
+            },
+            "copy": {
+                "name": "vmextensioncopy",
+                "count": "[length(parameters('virtualMachines'))]"
+            }
+        }
+    ]
+}
