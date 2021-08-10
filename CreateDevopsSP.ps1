@@ -2,17 +2,32 @@
     This script will create a service principal in your azure subscription 
     that can be used in the AVD PoC devops pipelines 
     requires: PowerShell AZ modules installed (install-module AZ)
-    execution location: run this locally (cloudshell may not work)
+    execution location: run this in cloudshell (or locally -> requires az cli and AZ Powershell modules 'install-module AZ')
     dependency: Execute this before you start any azure devops pipeline -> add your Service Principal in devops -> Project settings -> service connections -> resource manager (manual) -> type in the values you get as output here.
 #>
 
 #you need to login again although you already have the portal access (e.g. when using cloud shell)
 az login
 
+#choose your deployment location (this is for the keyvault) 
+do {
+    $regions = @("")
+    Get-AzLocation | foreach -Begin { $i = 0 } -Process {
+        $i++
+        $regions += "{0}. {1}" -f $i, $_.Location
+    } -outvariable menu
+    $regions | Format-Wide { $_ } -Column 4 -Force
+    $r = Read-Host "Select a region to deploy to by number"
+    $location = $regions[$r].Split()[1]
+    if ($location -eq $null) { Write-Host "You must make a valid selection" -ForegroundColor Red }
+    else {
+        Write-Host "Selecting region $($regions[$r])" -ForegroundColor Green
+    }
+}
+until ($location -ne $null)
 
 #adjust the vars to your needs!
-$SPName = 'yourazuredevopsserviceconnection'         #your value here!
-$location = 'northeurope'     #your value here!  -> should be the target region you are planing to use for this PoC
+$SPName = 'myDevopsSP'         #your value here!
 $keyvaultnamePrefix = 'kv-avdPoc'   #leave this as is - (otherwhise you would need to change this in the pipeline variable file consistently)
 $rgForSharedResources = 'rg-avdPoC-shared'  #leave this as is - (otherwhise you would need to change this in the pipeline variable file consistently)
 
@@ -77,6 +92,8 @@ Subscription ID: $subscriptionID
 Subscription Name: $subscriptionName
 
 Keyvault name: $keyvaultname
+
+Chosen deployment location: $location
 
 Service principals details:$($sp | convertfrom-json | Out-String)
 "@
