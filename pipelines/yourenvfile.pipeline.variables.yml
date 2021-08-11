@@ -2,7 +2,7 @@ variables:
 
 # Target subscription and service principal
 # -------------
-  azureResourceManagerConnection: 'yourazuredevopsserviceconnection'
+  azureResourceManagerConnection: 'myDevopsSP'
   artifactDropName: 'drop'
   keyvaultname: kv-avdPoc....  # enter the full name of your key vault -> holds the Sprincipal password - fill with exact name with output you received when running the CreateDevopsSP.ps1 - or lookup the keyvault name in your azure subscription
 
