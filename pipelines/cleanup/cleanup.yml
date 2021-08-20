@@ -14,12 +14,18 @@ parameters:
     values:
     - ..\yourenvfile.pipeline.variables.yml
     #- ..\otherenvironment.pipeline.variables.yml            # modify, rename and uncomment if 2nd... environment file
-
+  - name: aadglobaladmin
+    displayName: Azure AD (AAD) global administrator (...will break ad sync)
+    default: admin@....onmicrosoft.com
+  - name: aadglobaladminpassword
+    displayName: Global administrator password
 variables:
  - template: ${{ parameters.groupSelection }} #based on user input (see parameter above) we select the ...variables.yml file which defines the target environment 
 
 trigger: none
-
+pool:
+ vmImage: windows-latest
+ 
 stages:
   - stage: Cleanup
     displayName: Cleanup AVD PoC Deployment
@@ -31,19 +37,93 @@ stages:
         deploy:
           steps:
           - task: AzurePowerShell@5
-            displayName: Removing resource groups
+            displayName: Cleanup AVD PoC
             inputs:
              azureSubscription: $(azureResourceManagerConnection)
              ScriptType: "InlineScript"
-             errorActionPreference: "stop"
+             errorActionPreference: "continue"
              azurePowerShellVersion: "LatestVersion"
              Inline: |
+              
+              #Install Latest Nuget Package Provider
+              #Install-PackageProvider Nuget -Force -Verbose
+              
+              #Install module to break up AD sync
+              Install-Module -Name MSonline -Force
+              
+              $aaduser = "${{ parameters.aadglobaladmin }}".Trim()
+              $password = "${{ parameters.aadglobaladminpassword }}".Trim()
+              $passwd = ConvertTo-SecureString $password -AsPlainText -Force
+              $MsolCred = New-Object System.Management.Automation.PSCredential($aaduser, $passwd)
+
+              #Connect to azure ad
+              Connect-MsolService -Credential $MsolCred
+              
+              #disable AD Connect / Dir Sync
+              Set-MsolDirSyncEnabled –EnableDirSync $false -Force
+              "AD DirectorySynchronizationEnabled is set to: $((Get-MSOLCompanyInformation).DirectorySynchronizationEnabled)"
+
+              #remove Synced Accounts from your AAD
+              "removing AVDUser*..."
+              Get-MsolUser | Where-Object DisplayName -Like "AVDUser*" | Remove-MsolUser -Force 
+              Get-MsolUser | Where-Object DisplayName -Like "On-Premises Directory Synchronization Service Account*" | Remove-MsolUser -Force -verbose
+              $groups = ("DnsAdmins", "ADSyncPasswordSet", "ADSyncOperators","ADSyncBrowse","ADSyncAdmins","DnsUpdateProxy","AVD Users")
+              foreach ($group in $groups)
+              {
+                  "removing group $group"
+                  Get-MsolGroup -SearchString $group | Remove-MsolGroup -Force -verbose
+              } 
+              Get-MsolUser -ReturnDeletedUsers | Remove-MsolUser -RemoveFromRecycleBin -Force -verbose
+
+              #removing AVD artefacts
+              if (!$(get-module -Name az.desktopvirtualization -ListAvailable))
+              {
+                  Install-Module -Name Az.DesktopVirtualization -Force -Verbose
+              }
+
+              $hps = Get-AzWvdHostPool   
+              foreach ($hp in $hps)
+              {
+                  $rg = $($hp.Id).Split('/')[$($hp.Id).Split('/').IndexOf('resourcegroups')+1]
+                  $shs = Get-AzWvdSessionHost -HostPoolName $hp.name -ResourceGroupName $rg
+                  foreach ($sh in $shs)
+                  {
+                      "removing $($sh.name) - from $($hp.name)"
+                      Remove-AzWvdSessionHost -HostPoolName $($hp.name)  -ResourceGroupName $rg -Name $($sh.name.Split('/') | Select-Object -Last 1) -Force
+                  }
+              }   
+
+              $appgps = Get-AzWvdApplicationGroup   
+              foreach ($appgp in $appgps)
+              {   
+                  $rg = $($appgp.Id).Split('/')[$($appgp.Id).Split('/').IndexOf('resourcegroups')+1]
+                  "removing appgroup $($appgp.Name)"
+                  Remove-AzWvdApplicationGroup -Name $($appgp.Name) -ResourceGroupName $rg
+              }
+
+              $wses = Get-AzWvdWorkspace  
+              foreach ($ws in $wses)
+              {  
+                  $rg = $($ws.Id).Split('/')[$($ws.Id).Split('/').IndexOf('resourcegroups')+1]
+                  "removing workspace $($ws.Name)"
+                  Remove-AzWvdWorkspace -Name $($ws.Name) -ResourceGroupName $rg
+              }
+
+              #removing lock on keyvault
+              "removing lock on $(keyvaultname)"
+              $res = Get-AzResource -ResourceType 'Microsoft.KeyVault/vaults' -Name $(keyvaultname)
+              $lock = (Get-AzResourceLock -LockName 'preventdelete' -ResourceGroupName $res.ResourceGroupName -ResourceName $(keyvaultname) -ResourceType 'Microsoft.KeyVault/vaults')
+              Remove-AzResourceLock -LockId $($lock.LockId) -Force
+
+              #removing RGS
               $rgNames =  [array]"$(rgNames)" -split ',' | % {$_.Trim()}
+              $rgNames +=  [array]"$(rgpacker)" -split ',' | % {$_.Trim()}
+
               $myjobs = @()
               foreach ($rgName in $rgNames)
               {
                   write-output "removing resourcegroup: $rgName"
-                  $myjobs += Start-Job -Name "removing$rgName" -ScriptBlock {
+                  $myjobs += Start-Job -Name "removing $rgName" -ScriptBlock {
                       param([string] $rgName
                       )
                       Remove-AzResourceGroup -Name $rgName -Force
@@ -57,3 +137,14 @@ stages:
                   sleep 5
               }
               while ($running.count -gt 0)
+
+              "need to wait a while until all resource provider can be unregistered"
+              $in10 = (Get-Date).AddMinutes(10)
+              do
+              {
+                  $($in10-$(Get-Date)).ToString("hh`\:mm`\:ss")
+                  Start-Sleep -Seconds 1
+              }
+              until ((Get-Date) -gt $in10)
+              #unregister the resource provider to make things work for next time
+              Unregister-AzResourceProvider -ProviderNamespace 'Microsoft.DesktopVirtualization' -Verbose

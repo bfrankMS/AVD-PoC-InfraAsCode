@@ -132,12 +132,12 @@ try {
         Write-Output "Added time zone redirection registry key"
     }
     else {
-        Write-Output "Error locating the Teams registry key"
+        Write-Output "Error locating the Timezone registry key"
     }
 }
 catch {
     $ErrorMessage = $_.Exception.message
-    Write-Output "Error adding teams registry KEY: $ErrorMessage"
+    Write-Output "Error adding Timezone registry KEY: $ErrorMessage"
 }
 #endregion
 
@@ -250,7 +250,7 @@ Write-Output "Finished Language Pack installation $(Get-Date)"
 #downloaded Office Deployment Tool -> created a config file (https://config.office.com/) to add de-de as language -> execute OCT tool to download & install LP
 Write-Output "Installing Office Language Pack $(Get-Date)"
 try {
-    Start-Process -filepath 'c:\temp\software\OCT\setup.exe' -Wait -ErrorAction Stop -ArgumentList '/configure "c:\temp\software\OCT\bftest.xml"'
+    Start-Process -filepath 'c:\temp\software\OCT\setup.exe' -Wait -ErrorAction Stop -ArgumentList '/configure "c:\temp\software\OCT\bftest.xml"' -NoNewWindow
 }
 catch {
     $ErrorMessage = $_.Exception.message
@@ -361,6 +361,7 @@ Write-Output '*** AVD Packer customizer phase *** CONFIG OFFICE Regkeys *** Set 
 # Write-Output '*** AVD Packer customizer phase *** CONFIG ONEDRIVE *** Redirect and move Windows known folders to OneDrive by running the following command. ***'
 # New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' -Name 'KFMSilentOptIn' -Value $AADTenantID -Force | Out-Null
 
+<# Teams is now installed as part of the image so can skip this now
 Write-Output '*** AVD Packer customizer phase *** INSTALL *** Install C++ Redist for RTCSvc (Teams Optimized) ***'
 Invoke-WebRequest -Uri 'https://aka.ms/vs/16/release/vc_redist.x64.exe' -OutFile 'c:\temp\vc_redist.x64.exe'
 Invoke-Expression -Command 'C:\temp\vc_redist.x64.exe /install /quiet /norestart'
@@ -383,6 +384,7 @@ Write-Output '*** AVD Packer customizer phase *** CONFIG TEAMS *** Configure Tea
 New-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run -Name Teams -PropertyType Binary -Value ([byte[]](0x01, 0x00, 0x00, 0x00, 0x1a, 0x19, 0xc3, 0xb9, 0x62, 0x69, 0xd5, 0x01)) -Force
 Start-Sleep -Seconds 45
 Write-Output '*** AVD Packer customizer phase *** CONFIG TEAMS *** Configure Teams to start at sign in for all users. *** - Exit Code: ' $LASTEXITCODE
+#>
 
 Write-Output '*** AVD Packer customizer phase *** CONFIG *** Deleting temp folder. ***'
 #Get-ChildItem -Path 'C:\temp' -Recurse | Remove-Item -Recurse -Force | Out-Null
