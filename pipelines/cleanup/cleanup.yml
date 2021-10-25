@@ -112,7 +112,7 @@ stages:
               #removing lock on keyvault
               "removing lock on $(keyvaultname)"
               $res = Get-AzResource -ResourceType 'Microsoft.KeyVault/vaults' -Name $(keyvaultname)
-              $lock = (Get-AzResourceLock -LockName 'preventdelete' -ResourceGroupName $res.ResourceGroupName -ResourceName $(keyvaultname) -ResourceType 'Microsoft.KeyVault/vaults')
+              $lock = (Get-AzResourceLock -LockName 'preventAccidentialDeletion' -ResourceGroupName $res.ResourceGroupName -ResourceName $(keyvaultname) -ResourceType 'Microsoft.KeyVault/vaults')
               Remove-AzResourceLock -LockId $($lock.LockId) -Force
 
               #removing RGS
