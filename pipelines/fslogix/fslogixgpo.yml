@@ -123,6 +123,6 @@ stages:
                       $arguments = "-OUSuffix ${{ parameters.OUSuffix }} -storageAccountName ${{ parameters.storageAccountName }} -profileShareName ${{ parameters.profileShareName }}"
                       Write-Output "with arguments: $arguments"
 
-                      $vmres = Get-AzResource -Name "$(dcName)" -ResourceType 'Microsoft.Compute/virtualMachines'
+                      $vmres = Get-AzResource -Name "$(dcName)" -ResourceType 'Microsoft.Compute/virtualMachines' -ResourceGroupName "$(rgForSharedResources)"
                       Set-AzVMCustomScriptExtension -Name 'fslogixgpo' -VMName "$(dcName)" -ResourceGroupName "$($vmres.ResourceGroupName)" -Location "$($vmres.Location)" -Run './setupartefacts/cse_ad_fslogixgpo.ps1' -FileUri "$URI" -Argument "$arguments"
                       Remove-AzVMCustomScriptExtension -Name 'fslogixgpo' -VMName "$(dcName)" -ResourceGroupName "$($vmres.ResourceGroupName)" -Force

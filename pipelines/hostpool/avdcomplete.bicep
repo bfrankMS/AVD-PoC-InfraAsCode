@@ -1,4 +1,4 @@
-param resourcePrefix string = 'avdPoC'
+
 param currentDate string = utcNow('dd-MM-yyyy_HH_mm')
 param location string = resourceGroup().location
 
@@ -27,18 +27,32 @@ module hostpool 'modules/hostpool.bicep' = {
   params: {
     tagValues: tagValues
     location: location
+    hostpoolName: hostpoolName
+  }
+}
+
+module hostpoolvms 'modules/hostpoolgalleryvm.bicep' = {
+  name: 'hostpoolgalleryvm${currentDate}'
+  dependsOn: [
+    hostpool
+  ]
+  params:{
+    tagValues: tagValues
+    location: location
     administratorAccountPassword: administratorAccountPassword
     administratorAccountUsername: administratorAccountUsername
     domain: domain
     hostpoolName: hostpoolName
+    hostpoolToken: hostpool.outputs.registrationInfoToken
     ouPath: ouPath
     subnet_id: subnet_id
     vmPrefix: '${hostpoolName}-vm'
     vmInstanceSuffixes: [
       0
       1
-    ]
+    ] 
   }
+  
 }
 
 module appgroup 'modules/applicationgroup.bicep' = {
