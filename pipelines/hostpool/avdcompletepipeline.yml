@@ -88,8 +88,7 @@ stages:
                 --name $("avd_"+([datetime]::Now).ToString('dd-MM-yy_HH_mm')) `
                 --template-file $(Build.SourcesDirectory)/pipelines/hostpool/avdcomplete.bicep `
                 --resource-group $(resourceGroupHostPool) `
-                --parameters resourcePrefix=$(resourceprefix) `
-                  location=$(locationHostPool) `
+                --parameters location=$(locationHostPool) `
                   administratorAccountPassword=${{ parameters.administratorAccountPassword }} `
                   administratorAccountUsername=${{ parameters.administratorAccountUsername }} `
                   domain=$(domainName) `
